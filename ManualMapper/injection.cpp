@@ -181,6 +181,7 @@ void __stdcall shellcode(ManualMappingData* pData) {
 	auto _GetProcAddress = pData->pGetProcAddress;
 	auto _DllEntryPoint = (fDllEntryPoint)(pBase + pOptional->AddressOfEntryPoint);
 
+	// Relocations
 	BYTE* pDelta = pBase - pOptional->ImageBase;
 	if (pDelta != 0) {
 		if (pOptional->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size == 0)
@@ -196,8 +197,8 @@ void __stdcall shellcode(ManualMappingData* pData) {
 					UINT_PTR* pPatch = (UINT_PTR*)(pBase + pReloc->VirtualAddress + ((*pEntry) & 0x0FFF)); // Offset is lower 12 bits
 					*pPatch += (UINT_PTR)pDelta;
 				}
-				pReloc = (IMAGE_BASE_RELOCATION*)((BYTE*)pReloc + pReloc->SizeOfBlock); // Move to next block
 			}
+			pReloc = (IMAGE_BASE_RELOCATION*)((BYTE*)pReloc + pReloc->SizeOfBlock); // Move to next block
 		}
 	}
 
@@ -207,6 +208,12 @@ void __stdcall shellcode(ManualMappingData* pData) {
 		while (pImportDescription->Name) {
 			char* szMod = (char*)(pBase + pImportDescription->Name);
 			HINSTANCE hMod = _LoadLibraryA(szMod);
+			
+			if (!hMod) {
+				pImportDescription++;
+				continue;
+			}
+			
 			ULONG_PTR* pThunkRef = (ULONG_PTR*)(pBase + pImportDescription->OriginalFirstThunk);
 			ULONG_PTR* pFuncRef = (ULONG_PTR*)(pBase + pImportDescription->FirstThunk);
 
@@ -219,6 +226,10 @@ void __stdcall shellcode(ManualMappingData* pData) {
 				else {
 					auto pImport = (IMAGE_IMPORT_BY_NAME*)(pBase + (*pThunkRef));
 					*pFuncRef = (ULONG_PTR)_GetProcAddress(hMod, pImport->Name);
+				}
+				
+				if (!*pFuncRef) {
+					return;
 				}
 			}
 			pImportDescription++;
