@@ -1,5 +1,7 @@
 #include "injection.h"
 
+#include "xorstr.h"
+
 void __stdcall shellcode(ManualMappingData* pData);
 
 bool manualMap(HANDLE hProc, std::string_view dllFile) {
@@ -10,13 +12,13 @@ bool manualMap(HANDLE hProc, std::string_view dllFile) {
 	BYTE* pTargetBase = nullptr;
 
 	if (!std::filesystem::exists(dllFile)) {
-		LERR("DLL file does not exist: " << dllFile);
+		LERR(xorstr_("DLL file does not exist: ") << dllFile);
 		return false;
 	}
 
 	std::ifstream ifs(dllFile.data(), std::ios::binary | std::ios::ate);
 	if (!ifs.is_open()) {
-		LERR("Failed to open DLL file: " << dllFile);
+		LERR(xorstr_("Failed to open DLL file: ") << dllFile);
 		return false;
 	}
 	auto fileSize = ifs.tellg();
@@ -27,36 +29,36 @@ bool manualMap(HANDLE hProc, std::string_view dllFile) {
 	ifs.close();
 
 	if (*(WORD*)pSrcData != IMAGE_DOS_SIGNATURE) {
-		LERR("Invalid DOS signature.");
+		LERR(xorstr_("Invalid DOS signature."));
 		delete[] pSrcData;
 		return false;
 	}
 
-	LINF("Valid DOS signature confirmed.");
+	LINF(xorstr_("Valid DOS signature confirmed."));
 
 	pOldNtHeader = (IMAGE_NT_HEADERS*)(pSrcData + ((IMAGE_DOS_HEADER*)pSrcData)->e_lfanew);
 	if (pOldNtHeader->Signature != IMAGE_NT_SIGNATURE) {
-		LERR("Invalid NT signature.");
+		LERR(xorstr_("Invalid NT signature."));
 		delete[] pSrcData;
 		return false;
 	}
-	LINF("Valid NT signature confirmed.");
+	LINF(xorstr_("Valid NT signature confirmed."));
 
 	pOldFileHeader = &pOldNtHeader->FileHeader;
 	pOldOptHeader = &pOldNtHeader->OptionalHeader;
 
-	LINF("DLL Architecture: " << (pOldOptHeader->Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC ? "x86" : (pOldOptHeader->Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC ? "x64" : "Unknown")));
-	LINF("ImageBase: 0x" << std::hex << pOldOptHeader->ImageBase);
+	LINF(xorstr_("DLL Architecture: ") << (pOldOptHeader->Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC ? xorstr_("x86") : (pOldOptHeader->Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC ? xorstr_("x64") : xorstr_("Unknown"))));
+	LINF(xorstr_("ImageBase: 0x") << std::hex << pOldOptHeader->ImageBase);
 
 #ifdef _WIN64
 	if (pOldOptHeader->Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
-		LERR("DLL is not x64.");
+		LERR(xorstr_("DLL is not x64."));
 		delete[] pSrcData;
 		return false;
 	}
 #elif _WIN32
 	if (pOldOptHeader->Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC) {
-		LERR("DLL is not x86.");
+		LERR(xorstr_("DLL is not x86."));
 		delete[] pSrcData;
 		return false;
 	}
@@ -64,26 +66,28 @@ bool manualMap(HANDLE hProc, std::string_view dllFile) {
 #error Unknown platform
 #endif
 
-	LINF("DLL Architecture matches the injector.");
+	LINF(xorstr_("DLL Architecture matches the injector."));
 
 	pTargetBase = (BYTE*)VirtualAllocEx(hProc, (LPVOID)pOldOptHeader->ImageBase, pOldOptHeader->SizeOfImage, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 	if (!pTargetBase) {
 		// Allocate anywhere instead of preferred base
 		pTargetBase = (BYTE*)VirtualAllocEx(hProc, NULL, pOldOptHeader->SizeOfImage, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 		if (!pTargetBase) {
-			LERR("VirtualAllocEx failed. Error: " << GetLastError());
+			LERR(xorstr_("VirtualAllocEx failed. Error: ") << GetLastError());
 			delete[] pSrcData;
 			return false;
 		}
 
-		LWRN("Preferred ImageBase is unavailable, allocated elsewhere");
+		LWRN(xorstr_("Preferred ImageBase is unavailable, allocated elsewhere"));
 	}
 
-	LINF("Allocated memory in target process at: 0x" << std::hex << (uintptr_t)pTargetBase);
+	LINF(xorstr_("Allocated memory in target process at: 0x") << std::hex << (uintptr_t)pTargetBase);
 
 	ManualMappingData data = { 0 };
 	data.pLoadLibraryA = LoadLibraryA;
 	data.pGetProcAddress = GetProcAddress;
+
+	int sectionsCopied = 0;
 
 	auto pSectionHeader = IMAGE_FIRST_SECTION(pOldNtHeader);
 	for (UINT i = 0; i < pOldNtHeader->FileHeader.NumberOfSections; i++, pSectionHeader++) {
@@ -94,37 +98,37 @@ bool manualMap(HANDLE hProc, std::string_view dllFile) {
 			hProc, pTargetBase + pSectionHeader->VirtualAddress, pSrcData + pSectionHeader->PointerToRawData,
 			pSectionHeader->SizeOfRawData, nullptr
 		)) {
-			LERR("WriteProcessMemory failed for section " << std::string((char*)pSectionHeader->Name, strnlen_s((char*)pSectionHeader->Name, IMAGE_SIZEOF_SHORT_NAME)) << ". Error: " << GetLastError());
+			LERR(xorstr_("WriteProcessMemory failed for section ") << std::string((char*)pSectionHeader->Name, strnlen_s((char*)pSectionHeader->Name, IMAGE_SIZEOF_SHORT_NAME)) << xorstr_(". Error: ") << GetLastError());
 			VirtualFreeEx(hProc, pTargetBase, 0, MEM_RELEASE);
 			delete[] pSrcData;
 			return false;
 		}
 
-		LINF("Wrote section " << std::string((char*)pSectionHeader->Name, strnlen_s((char*)pSectionHeader->Name, IMAGE_SIZEOF_SHORT_NAME)) << " to target process.");
+		sectionsCopied++;
 	}
 
 	memcpy(pSrcData, &data, sizeof(ManualMappingData));
 	if (!WriteProcessMemory(hProc, pTargetBase, pSrcData, 0x1000, nullptr)) {
-		LERR("WriteProcessMemory failed for ManualMappingData. Error: " << GetLastError());
+		LERR(xorstr_("WriteProcessMemory failed for ManualMappingData. Error: ") << GetLastError());
 		VirtualFreeEx(hProc, pTargetBase, 0, MEM_RELEASE);
 		delete[] pSrcData;
 		return false;
 	}
 
 	delete[] pSrcData;
-	LINF("Copied all sections to target process.");
+	LINF(xorstr_("Copied ") << sectionsCopied << xorstr_(" sections to target process."));
 
 	data.hinstDLL = (HINSTANCE)pTargetBase;
 
 	void* pShellcode = VirtualAllocEx(hProc, nullptr, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 	if (!pShellcode) {
-		LERR("VirtualAllocEx failed for shellcode. Error: " << GetLastError());
+		LERR(xorstr_("VirtualAllocEx failed for shellcode. Error: ") << GetLastError());
 		VirtualFreeEx(hProc, pTargetBase, 0, MEM_RELEASE);
 		return false;
 	}
 
 	if (!WriteProcessMemory(hProc, pShellcode, (LPCVOID)shellcode, 0x1000, nullptr)) {
-		LERR("WriteProcessMemory failed for shellcode. Error: " << GetLastError());
+		LERR(xorstr_("WriteProcessMemory failed for shellcode. Error: ") << GetLastError());
 		VirtualFreeEx(hProc, pTargetBase, 0, MEM_RELEASE);
 		VirtualFreeEx(hProc, pShellcode, 0, MEM_RELEASE);
 		return false;
@@ -132,7 +136,7 @@ bool manualMap(HANDLE hProc, std::string_view dllFile) {
 
 	HANDLE hThread = CreateRemoteThread(hProc, nullptr, 0, (LPTHREAD_START_ROUTINE)pShellcode, pTargetBase, 0, nullptr);
 	if (!hThread) {
-		LERR("CreateRemoteThread failed. Error: " << GetLastError());
+		LERR(xorstr_("CreateRemoteThread failed. Error: ") << GetLastError());
 		VirtualFreeEx(hProc, pShellcode, 0, MEM_RELEASE);
 		VirtualFreeEx(hProc, pTargetBase, 0, MEM_RELEASE);
 		return false;
@@ -145,7 +149,7 @@ bool manualMap(HANDLE hProc, std::string_view dllFile) {
 	HINSTANCE hCheck;
 	while (true) {
 		if (!ReadProcessMemory(hProc, pTargetBase, &hCheck, sizeof(HINSTANCE), nullptr)) {
-			LERR("ReadProcessMemory failed. Error: " << GetLastError());
+			LERR(xorstr_("ReadProcessMemory failed. Error: ") << GetLastError());
 			VirtualFreeEx(hProc, pTargetBase, 0, MEM_RELEASE);
 			return false;
 		}
@@ -154,7 +158,7 @@ bool manualMap(HANDLE hProc, std::string_view dllFile) {
 		Sleep(10);
 	}
 
-	LINF("Manual mapping completed successfully.");
+	LINF(xorstr_("Manual mapping completed successfully."));
 	return true;
 }
 

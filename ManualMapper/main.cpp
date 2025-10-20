@@ -1,17 +1,19 @@
 #include "injection.h"
 
+#include "xorstr.h"
+
 bool Equals(WCHAR* a, std::string_view b);
 DWORD GetProcID(std::string_view procName) {
 	HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
 	if (hSnap == INVALID_HANDLE_VALUE) {
-		LERR("CreateToolhelp32Snapshot failed. Error: " << GetLastError());
+		LERR(xorstr_("CreateToolhelp32Snapshot failed. Error: ") << GetLastError());
 		return 0;
 	}
 
 	PROCESSENTRY32 procEntry;
 	procEntry.dwSize = sizeof(PROCESSENTRY32);
 	if (!Process32First(hSnap, &procEntry)) {
-		LERR("Process32First failed. Error: " << GetLastError());
+		LERR(xorstr_("Process32First failed. Error: ") << GetLastError());
 		CloseHandle(hSnap);
 		return 0;
 	}
@@ -39,31 +41,31 @@ bool Equals(WCHAR* a, std::string_view b) {
 
 int main() {
 	// Find DummyApp.exe process
-	DWORD pid = GetProcID("cs2.exe");
+	DWORD pid = GetProcID(xorstr_("cs2.exe"));
 	if (!pid) {
-		LERR("Could not find DummyApp.exe process.");
+		LERR(xorstr_("Could not find DummyApp.exe process."));
 		return 1;
 	}
 
-	LINF("Found cs2.exe with PID: " << pid);
+	LINF(xorstr_("Found cs2.exe with PID: ") << pid);
 
 	HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
 	if (!hProc || hProc == INVALID_HANDLE_VALUE) {
-		LERR("OpenProcess failed. Error: " << GetLastError());
+		LERR(xorstr_("OpenProcess failed. Error: ") << GetLastError());
 		return 1;
 	}
 
 	auto target =
 #ifdef _DEBUG
-		"Debug"
+		xorstr_("Debug")
 #else
-		"Release"
+		xorstr_("Release")
 #endif
 	;
 
 	auto dir = std::format("..\\x64\\{}\\", target);
 	std::filesystem::current_path(dir);
 
-	auto absPath = std::filesystem::absolute("DummyDLL.dll").string();
+	auto absPath = std::filesystem::absolute(xorstr_("DummyDLL.dll")).string();
 	manualMap(hProc, absPath);
 }
