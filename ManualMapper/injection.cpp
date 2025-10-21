@@ -1,6 +1,6 @@
 #include "injection.h"
 
-#include "xorstr.h"
+#include "vendor/xorstr.h"
 
 void __stdcall shellcode(ManualMappingData* pData);
 
