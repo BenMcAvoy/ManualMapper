@@ -25,10 +25,10 @@
 
 `ManualMapper` accepts a few command line flags to control the injection target and DLL path. The flags are implemented in `main.cpp` using `args.hxx` and are:
 
-- `-p`, `--process` (or `process`) — Name of the target process to inject into. Default: `DummyApp.exe`.
-- `-d`, `--dll` (or `dll`) — Path to the DLL to inject. Default: `DummyDLL.dll`.
-- `-t`, `--targetdir` (or `targetdir`) — If present, the injector will change the working directory to the build output folder for the current injector configuration (e.g. `..\x64\Debug\` or `..\x64\Release\`). This makes it easier to run the injector from the repo root and target the built `DummyDLL`. This is mostly useful for developing the mapper.
-- `-h`, `--help` — Show the help message and exit.
+- `-p`, `--process` (or `process`) - Name of the target process to inject into. Default: `DummyApp.exe`.
+- `-d`, `--dll` (or `dll`) - Path to the DLL to inject. Default: `DummyDLL.dll`.
+- `-t`, `--targetdir` (or `targetdir`) - If present, the injector will change the working directory to the build output folder for the current injector configuration (e.g. `..\x64\Debug\` or `..\x64\Release\`). This makes it easier to run the injector from the repo root and target the built `DummyDLL`. This is mostly useful for developing the mapper.
+- `-h`, `--help` - Show the help message and exit.
 
 Examples:
 
